@@ -1,0 +1,31 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    // Cafe Bun Chai — all signed-in staff share this cafe.
+    match /cafes/{cafeId} {
+      allow read, write: if signedIn();
+
+      match /{subcol}/{docId} {
+        allow read, write: if signedIn();
+      }
+    }
+
+    // Old top-level inventory (migrated on login, then unused).
+    match /inventory/{itemId} {
+      allow read, write: if signedIn();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "310240362150",
+    "project_id": "cafe-bun-chai",
+    "storage_bucket": "cafe-bun-chai.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:310240362150:android:3318d847f108c5f05c3e67",
+        "android_client_info": {
+          "package_name": "com.cafebunchai.pos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCxy3e8--tNz0G9HX0IM9LGS4wgsuCksjg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

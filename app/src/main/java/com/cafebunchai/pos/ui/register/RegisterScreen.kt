@@ -275,13 +275,16 @@ fun RegisterScreen(vm: RegisterViewModel, isAdmin: Boolean = true) {
     if (cancelId != null) {
         AlertDialog(
             onDismissRequest = { cancelId = null },
-            title = { Text("Cancel order") },
+            title = { Text("Cancel this order?") },
             text = {
-                OutlinedTextField(
-                    value = cancelReason,
-                    onValueChange = { cancelReason = it },
-                    label = { Text("Reason") },
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("This cannot be undone. The order stays in the register as cancelled.")
+                    OutlinedTextField(
+                        value = cancelReason,
+                        onValueChange = { cancelReason = it },
+                        label = { Text("Reason") },
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
@@ -299,7 +302,7 @@ fun RegisterScreen(vm: RegisterViewModel, isAdmin: Boolean = true) {
         AlertDialog(
             onDismissRequest = { importConfirm = false; pendingImport = null },
             title = { Text("Replace all local data?") },
-            text = { Text("Import overwrites menu and the register on this phone.") },
+            text = { Text("This cannot be undone. Import overwrites the menu and register on this phone, then updates cloud.") },
             confirmButton = {
                 TextButton(
                     onClick = {

@@ -18,12 +18,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -87,6 +92,7 @@ private fun PosShell(
     }
     val roleLabel = if (session.isAdmin) "Admin" else "Staff"
     val start = if (session.isAdmin) "home" else "order"
+    var confirmSignOut by remember { mutableStateOf(false) }
 
     fun goTab(route: String) {
         nav.navigate(route) {
@@ -121,7 +127,7 @@ private fun PosShell(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onSignOut) {
+                    IconButton(onClick = { confirmSignOut = true }) {
                         Icon(Icons.AutoMirrored.Outlined.Logout, contentDescription = "Sign out")
                     }
                 },
@@ -175,5 +181,24 @@ private fun PosShell(
                 }
             }
         }
+    }
+
+    if (confirmSignOut) {
+        AlertDialog(
+            onDismissRequest = { confirmSignOut = false },
+            title = { Text("Sign out?") },
+            text = { Text("You will need to log in again to use the till.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmSignOut = false
+                        onSignOut()
+                    },
+                ) { Text("Sign out") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmSignOut = false }) { Text("Stay") }
+            },
+        )
     }
 }

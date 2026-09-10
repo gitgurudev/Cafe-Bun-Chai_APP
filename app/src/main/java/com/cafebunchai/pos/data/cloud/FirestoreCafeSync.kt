@@ -86,14 +86,16 @@ class FirestoreCafeSync(
         return CafeCloudSnapshot(categories, menuItems, inventory, recipes, tickets)
     }
 
-    fun observe(): Flow<CafeCloudSnapshot> = combine(
+    fun observeTickets() = observeCol(ordersCol) { it.toCloudOrder() }
+
+    fun observeInventory() = observeCol(inventoryCol) { it.toInventory() }
+
+    fun observeCatalog() = combine(
         observeCol(categoriesCol) { it.toCategory() },
         observeCol(menuCol) { it.toMenu() },
-        observeCol(inventoryCol) { it.toInventory() },
         observeCol(recipesCol) { it.toRecipe() },
-        observeCol(ordersCol) { it.toCloudOrder() },
-    ) { cats, menu, inv, rec, tickets ->
-        CafeCloudSnapshot(cats, menu, inv, rec, tickets)
+    ) { cats, menu, recipes ->
+        Triple(cats, menu, recipes)
     }
 
     suspend fun pushEntireCafe(

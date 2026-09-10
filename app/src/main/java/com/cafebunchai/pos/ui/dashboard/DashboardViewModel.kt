@@ -3,6 +3,7 @@ package com.cafebunchai.pos.ui.dashboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.cafebunchai.pos.data.model.InventoryItem
 import com.cafebunchai.pos.data.model.Order
 import com.cafebunchai.pos.data.model.OrderStatus
 import com.cafebunchai.pos.data.model.Payment
@@ -10,7 +11,7 @@ import com.cafebunchai.pos.data.repo.OrderInventoryRepository
 import com.cafebunchai.pos.ui.util.dayBounds
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import java.time.LocalDate
 import java.time.ZoneId
@@ -33,17 +34,22 @@ data class DashboardUiState(
     val topBySales: ItemShare? = null,
     val topByQty: ItemShare? = null,
     val items: List<ItemShare> = emptyList(),
+    val lowStock: List<InventoryItem> = emptyList(),
     val recent: List<Order> = emptyList(),
+    val ready: Boolean = false,
 )
 
 class DashboardViewModel(
     repo: OrderInventoryRepository,
 ) : ViewModel() {
 
-    val state: StateFlow<DashboardUiState> = run {
-        val (from, to) = dayBounds(LocalDate.now(ZoneId.of("Asia/Kolkata")))
-        repo.observeOrders(from, to)
-    }.map { orders ->
+    val state: StateFlow<DashboardUiState> = combine(
+        run {
+            val (from, to) = dayBounds(LocalDate.now(ZoneId.of("Asia/Kolkata")))
+            repo.observeOrders(from, to)
+        },
+        repo.observeInventory(),
+    ) { orders, stock ->
         val done = orders.filter { it.status == OrderStatus.COMPLETED }
         val total = done.sumOf { it.totalPaise }
         val grouped = mutableMapOf<String, Pair<Int, Int>>()
@@ -74,9 +80,11 @@ class DashboardViewModel(
             topBySales = items.maxByOrNull { it.paise },
             topByQty = items.maxByOrNull { it.qty },
             items = items.take(6),
+            lowStock = stock.filter { it.isLow }.sortedBy { it.qtyOnHand },
             recent = orders.take(8),
+            ready = true,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardUiState())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, DashboardUiState())
 
     companion object {
         fun factory(repo: OrderInventoryRepository) = object : ViewModelProvider.Factory {

@@ -156,6 +156,32 @@ fun RegisterScreen(vm: RegisterViewModel, isAdmin: Boolean = true) {
                 )
             }
         }
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            item {
+                FilterChip(
+                    selected = state.payFilter == RegisterPayFilter.ALL,
+                    onClick = { vm.setPayFilter(RegisterPayFilter.ALL) },
+                    label = { Text("All") },
+                )
+            }
+            item {
+                FilterChip(
+                    selected = state.payFilter == RegisterPayFilter.UNPAID,
+                    onClick = { vm.setPayFilter(RegisterPayFilter.UNPAID) },
+                    label = { Text("Unpaid") },
+                )
+            }
+            item {
+                FilterChip(
+                    selected = state.payFilter == RegisterPayFilter.PAID,
+                    onClick = { vm.setPayFilter(RegisterPayFilter.PAID) },
+                    label = { Text("Paid") },
+                )
+            }
+        }
         Row(
             Modifier
                 .fillMaxWidth()
@@ -184,9 +210,14 @@ fun RegisterScreen(vm: RegisterViewModel, isAdmin: Boolean = true) {
         ) {
             Column(Modifier.padding(14.dp)) {
                 Text("Register total", style = MaterialTheme.typography.labelLarge)
-                Text(paiseToRupeeLabel(state.dayTotalPaise), style = MaterialTheme.typography.headlineMedium)
-                Text("Cash ${paiseToRupeeLabel(state.cashPaise)}  ·  UPI ${paiseToRupeeLabel(state.upiPaise)}")
-                Text("${state.completed.size} completed orders")
+                Text(
+                    if (state.ready) paiseToRupeeLabel(state.dayTotalPaise) else "—",
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+                if (state.ready) {
+                    Text("Cash ${paiseToRupeeLabel(state.cashPaise)}  ·  UPI ${paiseToRupeeLabel(state.upiPaise)}")
+                    Text("Unpaid ${paiseToRupeeLabel(state.unpaidPaise)}  ·  ${state.completed.size} orders")
+                }
             }
         }
         Row(
@@ -216,29 +247,31 @@ fun RegisterScreen(vm: RegisterViewModel, isAdmin: Boolean = true) {
             contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (state.orders.isEmpty()) {
+            if (state.ready && state.orders.isEmpty()) {
                 item { Text("No orders in this date range.") }
             }
-            items(state.orders, key = { it.id }) { order ->
-                Card {
-                    Column(Modifier.padding(12.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(formatTime(order.createdAt), fontWeight = FontWeight.SemiBold)
-                            Text(paiseToRupeeLabel(order.totalPaise), fontWeight = FontWeight.Bold)
-                        }
-                        Text(
-                            "${order.type.replace('_', ' ')} · ${order.payment}" +
-                                if (order.tableNote.isNotBlank()) " · ${order.tableNote}" else "",
-                        )
-                        order.lines.forEach { line ->
-                            val extra = if (line.lineNote.isNullOrBlank()) "" else " (${line.lineNote})"
-                            Text("  ${line.qty} × ${line.nameSnapshot}$extra")
-                        }
-                        if (order.status == OrderStatus.CANCELLED) {
-                            Text("Cancelled: ${order.cancelReason.orEmpty()}", color = MaterialTheme.colorScheme.error)
-                        } else if (isAdmin) {
-                            TextButton(onClick = { cancelId = order.id; cancelReason = "" }) {
-                                Text("Cancel order")
+            if (state.ready) {
+                items(state.orders, key = { it.id }) { order ->
+                    Card {
+                        Column(Modifier.padding(12.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(formatTime(order.createdAt), fontWeight = FontWeight.SemiBold)
+                                Text(paiseToRupeeLabel(order.totalPaise), fontWeight = FontWeight.Bold)
+                            }
+                            Text(
+                                "${order.type.replace('_', ' ')} · ${order.payment}" +
+                                    if (order.tableNote.isNotBlank()) " · ${order.tableNote}" else "",
+                            )
+                            order.lines.forEach { line ->
+                                val extra = if (line.lineNote.isNullOrBlank()) "" else " (${line.lineNote})"
+                                Text("  ${line.qty} × ${line.nameSnapshot}$extra")
+                            }
+                            if (order.status == OrderStatus.CANCELLED) {
+                                Text("Cancelled: ${order.cancelReason.orEmpty()}", color = MaterialTheme.colorScheme.error)
+                            } else if (isAdmin) {
+                                TextButton(onClick = { cancelId = order.id; cancelReason = "" }) {
+                                    Text("Cancel order")
+                                }
                             }
                         }
                     }

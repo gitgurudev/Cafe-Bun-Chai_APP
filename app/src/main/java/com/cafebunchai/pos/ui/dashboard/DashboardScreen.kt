@@ -1,5 +1,9 @@
 package com.cafebunchai.pos.ui.dashboard
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,27 +23,45 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.cafebunchai.pos.R
+import com.cafebunchai.pos.notify.StockAlerts
+import com.cafebunchai.pos.ui.theme.LowStock
 import com.cafebunchai.pos.ui.util.formatTime
 import com.cafebunchai.pos.ui.util.paiseToRupeeLabel
+import com.cafebunchai.pos.ui.util.qtyLabel
 
 @Composable
 fun DashboardScreen(
     vm: DashboardViewModel,
+    onOpenStock: () -> Unit,
     onOpenRegister: () -> Unit,
     onOpenOrder: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val notifyPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
+
+    LaunchedEffect(Unit) {
+        StockAlerts.createChannel(context)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     Column(
         Modifier
@@ -62,13 +84,18 @@ fun DashboardScreen(
         ) {
             Column(Modifier.padding(16.dp)) {
                 Text("Sales today", style = MaterialTheme.typography.labelLarge)
-                Text(paiseToRupeeLabel(state.todayTotalPaise), style = MaterialTheme.typography.headlineLarge)
-                Spacer(Modifier.height(8.dp))
-                Text("${state.orderCount} orders  ·  avg ${paiseToRupeeLabel(state.avgOrderPaise)}")
                 Text(
-                    "Cash ${paiseToRupeeLabel(state.cashPaise)}   UPI ${paiseToRupeeLabel(state.upiPaise)}   Unpaid ${paiseToRupeeLabel(state.unpaidPaise)}",
-                    style = MaterialTheme.typography.bodyMedium,
+                    if (state.ready) paiseToRupeeLabel(state.todayTotalPaise) else "—",
+                    style = MaterialTheme.typography.headlineLarge,
                 )
+                Spacer(Modifier.height(8.dp))
+                if (state.ready) {
+                    Text("${state.orderCount} orders  ·  avg ${paiseToRupeeLabel(state.avgOrderPaise)}")
+                    Text(
+                        "Cash ${paiseToRupeeLabel(state.cashPaise)}   UPI ${paiseToRupeeLabel(state.upiPaise)}   Unpaid ${paiseToRupeeLabel(state.unpaidPaise)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
         }
         Row(
@@ -78,30 +105,34 @@ fun DashboardScreen(
             HighlightCard(
                 modifier = Modifier.weight(1f),
                 label = "Top seller",
-                title = state.topBySales?.name ?: "—",
-                detail = state.topBySales?.let {
+                title = if (!state.ready) "—" else (state.topBySales?.name ?: "—"),
+                detail = if (!state.ready) " " else state.topBySales?.let {
                     "${pct(it.share)} · ${paiseToRupeeLabel(it.paise)}"
                 } ?: "No sales yet",
             )
             HighlightCard(
                 modifier = Modifier.weight(1f),
                 label = "Most ordered",
-                title = state.topByQty?.name ?: "—",
-                detail = state.topByQty?.let { "${it.qty} cups / pcs" } ?: "No sales yet",
+                title = if (!state.ready) "—" else (state.topByQty?.name ?: "—"),
+                detail = if (!state.ready) " " else state.topByQty?.let { "${it.qty} cups / pcs" } ?: "No sales yet",
             )
         }
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Payment mix", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                ShareBar("Cash", state.cashPaise, state.todayTotalPaise)
-                ShareBar("UPI", state.upiPaise, state.todayTotalPaise)
-                ShareBar("Unpaid", state.unpaidPaise, state.todayTotalPaise)
+                if (state.ready) {
+                    ShareBar("Cash", state.cashPaise, state.todayTotalPaise)
+                    ShareBar("UPI", state.upiPaise, state.todayTotalPaise)
+                    ShareBar("Unpaid", state.unpaidPaise, state.todayTotalPaise)
+                }
             }
         }
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("What's selling", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                if (state.items.isEmpty()) {
+                if (!state.ready) {
+                    Text(" ", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else if (state.items.isEmpty()) {
                     Text("Complete an order to see item share.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     state.items.forEach { item ->
@@ -130,9 +161,37 @@ fun DashboardScreen(
         }
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Kitchen alerts", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    TextButton(onClick = onOpenStock) { Text("Stock") }
+                }
+                if (!state.ready) {
+                    Text(" ", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else if (state.lowStock.isEmpty()) {
+                    Text("All stock is above the refill line.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    Text(
+                        "Refill these before service slows down.",
+                        color = LowStock,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    state.lowStock.forEach { item ->
+                        Text(
+                            "• ${item.name}: ${qtyLabel(item.qtyOnHand, item.unit)}  (alert at ${qtyLabel(item.lowStockThreshold, item.unit)})",
+                            color = LowStock,
+                        )
+                    }
+                }
+            }
+        }
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
                 Text("Latest orders", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(8.dp))
-                if (state.recent.isEmpty()) {
+                if (!state.ready) {
+                    Spacer(Modifier.height(8.dp))
+                } else if (state.recent.isEmpty()) {
                     Text("No orders yet today.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     state.recent.forEach { order ->

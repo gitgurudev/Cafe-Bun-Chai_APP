@@ -40,7 +40,7 @@ class MenuViewModel(
         editor,
     ) { cats, items, ed ->
         MenuUiState(cats, items, ed)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MenuUiState())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, MenuUiState())
 
     fun startNew() {
         val cat = state.value.categories.firstOrNull()?.id.orEmpty()

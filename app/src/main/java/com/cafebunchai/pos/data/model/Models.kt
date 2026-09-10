@@ -72,6 +72,11 @@ data class StockNeed(
     val shortfall: Boolean get() = needed > available + 0.0001
 }
 
+data class CompletedSale(
+    val order: Order,
+    val refillAlerts: List<InventoryItem> = emptyList(),
+)
+
 object OrderStatus {
     const val COMPLETED = "completed"
     const val CANCELLED = "cancelled"

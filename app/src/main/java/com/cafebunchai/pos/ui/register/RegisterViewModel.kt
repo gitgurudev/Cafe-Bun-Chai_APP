@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.cafebunchai.pos.data.model.Order
 import com.cafebunchai.pos.data.model.OrderStatus
+import com.cafebunchai.pos.data.model.Payment
 import com.cafebunchai.pos.data.repo.OrderInventoryRepository
 import com.cafebunchai.pos.ui.util.rangeBounds
 import com.cafebunchai.pos.ui.util.thisMonth
@@ -24,17 +25,23 @@ import java.time.ZoneId
 
 enum class RegisterPreset { TODAY, WEEK, MONTH, YEAR, CUSTOM }
 
+enum class RegisterPayFilter { ALL, PAID, UNPAID }
+
 data class RegisterUiState(
     val from: LocalDate = LocalDate.now(),
     val to: LocalDate = LocalDate.now(),
     val preset: RegisterPreset = RegisterPreset.TODAY,
+    val payFilter: RegisterPayFilter = RegisterPayFilter.ALL,
     val orders: List<Order> = emptyList(),
     val message: String? = null,
+    val ready: Boolean = false,
 ) {
     val completed: List<Order> get() = orders.filter { it.status == OrderStatus.COMPLETED }
     val dayTotalPaise: Int get() = completed.sumOf { it.totalPaise }
-    val cashPaise: Int get() = completed.filter { it.payment == "cash" }.sumOf { it.totalPaise }
-    val upiPaise: Int get() = completed.filter { it.payment == "upi" }.sumOf { it.totalPaise }
+    val cashPaise: Int get() = completed.filter { it.payment == Payment.CASH }.sumOf { it.totalPaise }
+    val upiPaise: Int get() = completed.filter { it.payment == Payment.UPI }.sumOf { it.totalPaise }
+    val unpaidPaise: Int get() = completed.filter { it.payment == Payment.UNPAID }.sumOf { it.totalPaise }
+    val unpaidCount: Int get() = completed.count { it.payment == Payment.UNPAID }
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -46,20 +53,47 @@ class RegisterViewModel(
     private val fromDate = MutableStateFlow(LocalDate.now(zone))
     private val toDate = MutableStateFlow(LocalDate.now(zone))
     private val preset = MutableStateFlow(RegisterPreset.TODAY)
+    private val payFilter = MutableStateFlow(RegisterPayFilter.ALL)
+    private val filterTouched = MutableStateFlow(false)
     private val message = MutableStateFlow<String?>(null)
 
     val state: StateFlow<RegisterUiState> = combine(
-        combine(fromDate, toDate, preset) { f, t, p -> Triple(f, t, p) }
-            .flatMapLatest { (f, t, p) ->
-                val (start, end) = rangeBounds(f, t)
-                repo.observeOrders(start, end).map { orders ->
-                    RegisterUiState(from = f, to = t, preset = p, orders = orders)
+        combine(fromDate, toDate, preset, payFilter, filterTouched) { f, t, p, pay, touched ->
+            RegisterQuery(f, t, p, pay, touched)
+        }.flatMapLatest { q ->
+            val (start, end) = rangeBounds(q.from, q.to)
+            repo.observeOrders(start, end).map { orders ->
+                val unpaid = orders.filter {
+                    it.status == OrderStatus.COMPLETED &&
+                        it.payment == Payment.UNPAID &&
+                        it.lines.isNotEmpty()
                 }
-            },
+                val filter = when {
+                    q.filterTouched -> q.payFilter
+                    unpaid.isNotEmpty() -> RegisterPayFilter.UNPAID
+                    else -> RegisterPayFilter.ALL
+                }
+                val visible = when (filter) {
+                    RegisterPayFilter.ALL -> orders
+                    RegisterPayFilter.UNPAID -> unpaid
+                    RegisterPayFilter.PAID -> orders.filter {
+                        it.status == OrderStatus.COMPLETED && it.payment != Payment.UNPAID
+                    }
+                }
+                RegisterUiState(
+                    from = q.from,
+                    to = q.to,
+                    preset = q.preset,
+                    payFilter = filter,
+                    orders = visible,
+                    ready = true,
+                )
+            }
+        },
         message,
     ) { ui, msg ->
         ui.copy(message = msg)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RegisterUiState())
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, RegisterUiState())
 
     fun presetToday() = setRange(LocalDate.now(zone), LocalDate.now(zone), RegisterPreset.TODAY)
 
@@ -104,6 +138,11 @@ class RegisterViewModel(
         }
     }
 
+    fun setPayFilter(value: RegisterPayFilter) {
+        filterTouched.value = true
+        payFilter.value = value
+    }
+
     fun cancel(orderId: String, reason: String) {
         viewModelScope.launch {
             repo.cancelOrder(orderId, reason).onFailure {
@@ -129,3 +168,11 @@ class RegisterViewModel(
         }
     }
 }
+
+private data class RegisterQuery(
+    val from: LocalDate,
+    val to: LocalDate,
+    val preset: RegisterPreset,
+    val payFilter: RegisterPayFilter,
+    val filterTouched: Boolean,
+)

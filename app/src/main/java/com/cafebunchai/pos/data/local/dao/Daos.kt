@@ -82,6 +82,9 @@ interface InventoryDao {
 @Dao
 interface RecipeDao {
     @Query("SELECT * FROM recipe_lines")
+    fun observeAll(): Flow<List<RecipeLineEntity>>
+
+    @Query("SELECT * FROM recipe_lines")
     suspend fun getAll(): List<RecipeLineEntity>
 
     @Query("SELECT * FROM recipe_lines WHERE menuItemId = :menuItemId")

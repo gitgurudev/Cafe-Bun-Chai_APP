@@ -1,5 +1,11 @@
 package com.cafebunchai.pos.ui
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -7,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.LocalCafe
 import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.ReceiptLong
@@ -32,8 +39,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -42,6 +51,7 @@ import androidx.navigation.compose.rememberNavController
 import com.cafebunchai.pos.data.AppContainer
 import com.cafebunchai.pos.data.auth.AuthState
 import com.cafebunchai.pos.data.auth.StaffSession
+import com.cafebunchai.pos.notify.StockAlerts
 import com.cafebunchai.pos.ui.auth.AuthViewModel
 import com.cafebunchai.pos.ui.auth.LoginScreen
 import com.cafebunchai.pos.ui.dashboard.DashboardScreen
@@ -52,6 +62,8 @@ import com.cafebunchai.pos.ui.order.OrderScreen
 import com.cafebunchai.pos.ui.order.OrderViewModel
 import com.cafebunchai.pos.ui.register.RegisterScreen
 import com.cafebunchai.pos.ui.register.RegisterViewModel
+import com.cafebunchai.pos.ui.stock.StockScreen
+import com.cafebunchai.pos.ui.stock.StockViewModel
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)
 
@@ -79,6 +91,7 @@ private fun PosShell(
     session: StaffSession,
     onSignOut: () -> Unit,
 ) {
+    val context = LocalContext.current
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val current = backStack?.destination?.route
@@ -87,27 +100,69 @@ private fun PosShell(
         add(Tab("order", "Order", Icons.Outlined.LocalCafe))
         add(Tab("register", "Register", Icons.Outlined.ReceiptLong))
         if (session.isAdmin) {
+            add(Tab("stock", "Stock", Icons.Outlined.Inventory2))
             add(Tab("menu", "Menu", Icons.Outlined.MenuBook))
         }
     }
     val roleLabel = if (session.isAdmin) "Admin" else "Staff"
     val start = if (session.isAdmin) "home" else "order"
     var confirmSignOut by remember { mutableStateOf(false) }
+    val notifyPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
+    val repo = container.repository
+    val orderVm: OrderViewModel = viewModel(
+        key = "order-${session.uid}",
+        factory = OrderViewModel.factory(repo),
+    )
+    val registerVm: RegisterViewModel = viewModel(
+        key = "register-${session.uid}",
+        factory = RegisterViewModel.factory(repo),
+    )
+    val dashboardVm: DashboardViewModel = viewModel(
+        key = "home-${session.uid}",
+        factory = DashboardViewModel.factory(repo),
+    )
+    val stockVm: StockViewModel = viewModel(
+        key = "stock-${session.uid}",
+        factory = StockViewModel.factory(repo),
+    )
+    val menuVm: MenuViewModel = viewModel(
+        key = "menu-${session.uid}",
+        factory = MenuViewModel.factory(repo),
+    )
 
     fun goTab(route: String) {
+        if (current == route) return
         nav.navigate(route) {
             popUpTo(nav.graph.findStartDestination().id) {
-                saveState = false
+                saveState = true
             }
             launchSingleTop = true
-            restoreState = false
+            restoreState = true
         }
     }
 
     LaunchedEffect(Unit) {
+        StockAlerts.createChannel(context)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         runCatching { container.repository.hydrateFromCloud() }
-        container.repository.observeCloud().collect { snapshot ->
-            container.repository.applyCloud(snapshot)
+        launch {
+            container.repository.observeCloudTickets().collect { tickets ->
+                runCatching { container.repository.applyLiveTickets(tickets) }
+            }
+        }
+        launch {
+            container.repository.observeCloudInventory().collect { items ->
+                runCatching { container.repository.applyLiveInventory(items) }
+            }
+        }
+        launch {
+            container.repository.observeCloudCatalog().collect { (cats, menu, recipes) ->
+                runCatching { container.repository.applyLiveCatalog(cats, menu, recipes) }
+            }
         }
     }
 
@@ -155,29 +210,33 @@ private fun PosShell(
             navController = nav,
             startDestination = start,
             modifier = Modifier.padding(padding),
+            enterTransition = { EnterTransition.None },
+            exitTransition = { ExitTransition.None },
+            popEnterTransition = { EnterTransition.None },
+            popExitTransition = { ExitTransition.None },
         ) {
             if (session.isAdmin) {
                 composable("home") {
-                    val vm: DashboardViewModel = viewModel(factory = DashboardViewModel.factory(container.repository))
                     DashboardScreen(
-                        vm = vm,
+                        vm = dashboardVm,
+                        onOpenStock = { goTab("stock") },
                         onOpenRegister = { goTab("register") },
                         onOpenOrder = { goTab("order") },
                     )
                 }
             }
             composable("order") {
-                val vm: OrderViewModel = viewModel(factory = OrderViewModel.factory(container.repository))
-                OrderScreen(vm)
+                OrderScreen(orderVm)
             }
             composable("register") {
-                val vm: RegisterViewModel = viewModel(factory = RegisterViewModel.factory(container.repository))
-                RegisterScreen(vm, isAdmin = session.isAdmin)
+                RegisterScreen(registerVm, isAdmin = session.isAdmin)
             }
             if (session.isAdmin) {
+                composable("stock") {
+                    StockScreen(stockVm)
+                }
                 composable("menu") {
-                    val vm: MenuViewModel = viewModel(factory = MenuViewModel.factory(container.repository))
-                    MenuScreen(vm)
+                    MenuScreen(menuVm)
                 }
             }
         }
